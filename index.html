@@ -897,14 +897,30 @@
         async function fetchData() {
             showLoader(true);
             try {
+                // Switch to POST for Read as well to bypass CORS preflight issues consistently
+                // We append action=read to URL so it works even if Body parsing fails on older script versions
                 const separator = API_URL.includes('?') ? '&' : '?';
-                const res = await fetch(`${API_URL}${separator}t=${Date.now()}`);
+                const url = `${API_URL}${separator}action=read&t=${Date.now()}`;
+
+                const res = await fetch(url, {
+                    method: 'POST',
+                    headers: { "Content-Type": "text/plain;charset=utf-8" },
+                    body: JSON.stringify({ action: 'read' })
+                });
 
                 if (!res.ok) {
                     throw new Error(`HTTP Error ${res.status}`);
                 }
 
-                const json = await res.json();
+                const text = await res.text();
+                // Parse JSON manually to handle potential HTML error responses from GAS
+                let json;
+                try {
+                    json = JSON.parse(text);
+                } catch (e) {
+                    console.warn("Response was not JSON:", text.substring(0, 100));
+                    throw new Error("Invalid server response. Ensure Script is deployed as 'Anyone'.");
+                }
 
                 if (json.status === 'error') throw new Error(json.message);
 
@@ -943,8 +959,8 @@
             } catch (e) {
                 console.error(e);
                 let msg = "Connection Error: " + e.message;
-                if (e.message.includes("Failed to fetch")) {
-                    msg += "\n\nPossible causes:\n1. The Google Apps Script is not deployed as 'Anyone'.\n2. You are using the wrong URL.\n3. CORS is blocking the request (common if opening HTML file directly).";
+                if (e.message.includes("Failed to fetch") || e.message.includes("NetworkError")) {
+                    msg += "\n\nPossible causes:\n1. The Google Apps Script is not deployed as 'Anyone'.\n2. You are using the wrong URL.\n3. CORS is blocking the request.";
                 }
                 alert(msg);
             }
